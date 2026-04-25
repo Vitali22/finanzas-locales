@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="es" data-theme="{{ theme }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Finanzas Locales</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div>
+      <h1>Finanzas Locales</h1>
+      <span>Corte actual: {{ dashboard.cycle_start }} a {{ dashboard.cycle_end }}</span>
+    </div>
+    <nav class="side-nav">
+      <details open>
+        <summary>Dashboard</summary>
+        <a href="#dashboard" data-view-link="dashboard">Resumen</a>
+        <a href="#plan-mensual" data-view-link="plan-mensual">Plan mensual</a>
+      </details>
+      <details open>
+        <summary>Gastos</summary>
+        <a href="#registrar-gasto" data-view-link="registrar-gasto">Registrar gasto</a>
+        <a href="#filtros-gastos" data-view-link="filtros-gastos">Filtros</a>
+        <a href="#lista-gastos" data-view-link="lista-gastos">Lista de gastos</a>
+      </details>
+      <details>
+        <summary>Ingresos</summary>
+        <a href="#registrar-ingreso" data-view-link="registrar-ingreso">Registrar ingreso</a>
+        <a href="#lista-ingresos" data-view-link="lista-ingresos">Lista de ingresos</a>
+      </details>
+      <details>
+        <summary>Tarjetas</summary>
+        <a href="#crear-tarjeta" data-view-link="crear-tarjeta">Crear tarjeta/cuenta</a>
+        <a href="#gasto-tarjeta" data-view-link="gasto-tarjeta">Gasto por tarjeta</a>
+        <a href="#lista-tarjetas" data-view-link="lista-tarjetas">Tarjetas</a>
+        <a href="#movimientos-tarjeta" data-view-link="movimientos-tarjeta">Movimientos</a>
+      </details>
+      <details>
+        <summary>Calendario</summary>
+        <a href="#nuevo-evento" data-view-link="nuevo-evento">Nuevo evento</a>
+        <a href="#vista-calendario" data-view-link="vista-calendario">Vista mensual</a>
+        <a href="#lista-eventos" data-view-link="lista-eventos">Lista de eventos</a>
+      </details>
+      <details>
+        <summary>Ajustes</summary>
+        <a href="#categorias-ajustes" data-view-link="categorias-ajustes">Categorias</a>
+        <a href="#seguridad-ajustes" data-view-link="seguridad-ajustes">Seguridad y tema</a>
+        <a href="#respaldo-ajustes" data-view-link="respaldo-ajustes">Exportar/respaldo</a>
+        <a href="#demo-ajustes" data-view-link="demo-ajustes">Datos demo</a>
+      </details>
+      <a href="{{ url_for('logout') }}">Salir</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="alert {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <section id="dashboard-section" class="section">
+      <div id="dashboard" class="app-view">
+        <div class="metrics">
+          <article><span>Disponible</span><strong>{{ "$%.2f"|format(dashboard.available) }}</strong><small>MXN</small></article>
+          <article><span>Gasto del dia</span><strong>{{ "$%.2f"|format(dashboard.gasto_dia) }}</strong><small>Incluye tarjetas</small></article>
+          <article><span>Presupuesto diario</span><strong>{{ "$%.2f"|format(dashboard.daily_budget) }}</strong><small>Ingreso restante / dias</small></article>
+          <article><span>Restante hoy</span><strong>{{ "$%.2f"|format(dashboard.remaining_today) }}</strong><small>Despues de gastos</small></article>
+          <article><span>Deuda credito</span><strong>{{ "$%.2f"|format(dashboard.credit_debt) }}</strong><small>No resta disponible</small></article>
+        </div>
+
+        {% if dashboard.alerts %}
+        <div class="notice">
+          <strong>Proximos 3 dias:</strong>
+          {% for event in dashboard.alerts %}
+            <span>{{ event.fecha }} - {{ event.nombre }} {{ "$%.2f"|format(event.monto) }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="grid two">
+          <article class="panel">
+            <h2>Gasto vs presupuesto diario</h2>
+            <canvas id="budgetChart" height="220"></canvas>
+          </article>
+          <article class="panel">
+            <h2>Distribucion por categoria</h2>
+            <canvas id="categoryChart" height="220"></canvas>
+          </article>
+        </div>
+      </div>
+
+      <article id="plan-mensual" class="panel app-view">
+        <h2>Plan mensual con corte dia 15</h2>
+        <form class="inline-form" method="post" action="{{ url_for('save_plan') }}">
+          <label>Ingreso planeado del ciclo</label>
+          <input type="number" step="0.01" name="ingreso_plan" value="{{ "%.2f"|format(dashboard.monthly_plan) }}">
+          <button>Guardar</button>
+        </form>
+        <p class="muted">Gastado en el ciclo: {{ "$%.2f"|format(dashboard.cycle_spent) }} MXN</p>
+      </article>
+    </section>
+
+    <section id="gastos" class="section">
+      <h2>Gastos</h2>
+      <div class="grid two">
+        <article id="registrar-gasto" class="panel app-view">
+          <h3>Registrar gasto rapido</h3>
+          <form method="post" action="{{ url_for('add_expense') }}" class="form-grid">
+            <input type="number" step="0.01" name="monto" placeholder="Monto" required>
+            <select name="categoria_id" required>
+              {% for c in categorias if not c.parent_id %}
+                <option value="{{ c.id }}">{{ c.nombre }}</option>
+              {% endfor %}
+            </select>
+            <select name="subcategoria_id">
+              <option value="">Sin subcategoria</option>
+              {% for c in categorias if c.parent_id %}
+                <option value="{{ c.id }}">{{ c.nombre }}</option>
+              {% endfor %}
+            </select>
+            <select name="metodo_pago">
+              {% for m in metodos %}<option>{{ m }}</option>{% endfor %}
+            </select>
+            <input type="date" name="fecha" value="{{ today }}">
+            <input type="text" name="descripcion" placeholder="Descripcion opcional">
+            <button>Guardar gasto</button>
+          </form>
+        </article>
+        <article id="filtros-gastos" class="panel app-view">
+          <h3>Filtros</h3>
+          <form method="get" class="form-grid">
+            <input type="date" name="fecha_inicio" value="{{ filters.fecha_inicio }}">
+            <input type="date" name="fecha_fin" value="{{ filters.fecha_fin }}">
+            <select name="categoria">
+              <option value="">Todas las categorias</option>
+              {% for c in categorias if not c.parent_id %}
+                <option value="{{ c.nombre }}" {% if filters.categoria == c.nombre %}selected{% endif %}>{{ c.nombre }}</option>
+              {% endfor %}
+            </select>
+            <select name="tarjeta">
+              <option value="">Todas las tarjetas</option>
+              {% for t in tarjetas %}
+                <option value="{{ t.id }}" {% if filters.tarjeta == t.id|string %}selected{% endif %}>{{ t.nombre }}</option>
+              {% endfor %}
+            </select>
+            <button>Aplicar filtros</button>
+            <a class="button ghost" href="{{ url_for('index') }}">Limpiar</a>
+          </form>
+        </article>
+      </div>
+      <div id="lista-gastos" class="table-wrap app-view">
+        <table>
+          <thead><tr><th>Fecha</th><th>Monto</th><th>Categoria</th><th>Metodo</th><th>Descripcion</th><th></th></tr></thead>
+          <tbody>
+          {% for g in gastos %}
+            <tr>
+              <td>{{ g.fecha }}</td><td>{{ "$%.2f"|format(g.monto) }}</td><td>{{ g.categoria }}</td><td>{{ g.metodo_pago }}</td><td>{{ g.descripcion }}</td>
+              <td><form method="post" action="{{ url_for('delete_expense', item_id=g.id) }}"><button class="danger">Eliminar</button></form></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="ingresos" class="section">
+      <h2>Ingresos / efectivo</h2>
+      <article id="registrar-ingreso" class="panel app-view">
+        <form method="post" action="{{ url_for('add_income') }}" class="form-grid">
+          <input type="number" step="0.01" name="monto" placeholder="Monto" required>
+          <select name="categoria_id">
+            {% for c in categorias_ingreso %}<option value="{{ c.id }}">{{ c.nombre }}</option>{% endfor %}
+          </select>
+          <select name="tarjeta_id">
+            <option value="">A balance general</option>
+            {% for t in tarjetas if t.tipo == 'debito' %}<option value="{{ t.id }}">Depositar a {{ t.nombre }}</option>{% endfor %}
+          </select>
+          <input type="date" name="fecha" value="{{ today }}">
+          <input type="text" name="descripcion" placeholder="Descripcion">
+          <button>Registrar ingreso</button>
+        </form>
+      </article>
+      <div id="lista-ingresos" class="table-wrap app-view">
+        <table>
+          <thead><tr><th>Fecha</th><th>Monto</th><th>Categoria</th><th>Descripcion</th><th></th></tr></thead>
+          <tbody>
+          {% for i in ingresos %}
+            <tr><td>{{ i.fecha }}</td><td>{{ "$%.2f"|format(i.monto) }}</td><td>{{ i.categoria }}</td><td>{{ i.descripcion }}</td>
+            <td><form method="post" action="{{ url_for('delete_income', item_id=i.id) }}"><button class="danger">Eliminar</button></form></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tarjetas" class="section">
+      <h2>Tarjetas y cuentas</h2>
+      <div class="grid two">
+        <article id="crear-tarjeta" class="panel app-view">
+          <h3>Crear tarjeta/cuenta</h3>
+          <form method="post" action="{{ url_for('add_card') }}" class="form-grid">
+            <input type="text" name="nombre" placeholder="Nombre" required>
+            <select name="tipo"><option value="credito">Credito</option><option value="debito">Debito/cuenta</option></select>
+            <input type="number" step="0.01" name="limite" placeholder="Limite">
+            <input type="number" step="0.01" name="saldo" placeholder="Saldo inicial debito">
+            <input type="number" min="1" max="31" name="fecha_corte" placeholder="Dia corte">
+            <input type="number" min="1" max="31" name="fecha_pago" placeholder="Dia pago">
+            <button>Crear</button>
+          </form>
+        </article>
+        <article id="gasto-tarjeta" class="panel app-view">
+          <h3>Gasto por tarjeta</h3>
+          <form method="post" action="{{ url_for('add_card_expense') }}" class="form-grid">
+            <select name="tarjeta_id" required>
+              {% for t in tarjetas %}<option value="{{ t.id }}">{{ t.nombre }} ({{ t.tipo }})</option>{% endfor %}
+            </select>
+            <input type="number" step="0.01" name="monto" placeholder="Monto" required>
+            <input type="date" name="fecha" value="{{ today }}">
+            <input type="text" name="descripcion" placeholder="Descripcion">
+            <button>Registrar</button>
+          </form>
+        </article>
+      </div>
+      <div id="lista-tarjetas" class="card-list app-view">
+        {% for t in tarjetas %}
+          <article class="card-item">
+            <strong>{{ t.nombre }}</strong><span>{{ t.tipo }}</span>
+            <p>
+              Limite: {{ "$%.2f"|format(t.limite) }} |
+              Saldo: {{ "$%.2f"|format(t.saldo) }} |
+              Adeudo: {{ "$%.2f"|format(t.total_adeudado) }} |
+              Corte: {{ t.fecha_corte or "-" }} |
+              Pago: {{ t.fecha_pago or "-" }}
+            </p>
+            <form method="post" action="{{ url_for('delete_card', item_id=t.id) }}"><button class="danger">Eliminar</button></form>
+          </article>
+        {% endfor %}
+      </div>
+      <div id="movimientos-tarjeta" class="table-wrap app-view">
+        <table>
+          <thead><tr><th>Fecha</th><th>Tarjeta</th><th>Tipo</th><th>Monto</th><th>Descripcion</th><th></th></tr></thead>
+          <tbody>
+          {% for g in gastos_tarjeta %}
+            <tr><td>{{ g.fecha }}</td><td>{{ g.tarjeta }}</td><td>{{ g.tipo }}</td><td>{{ "$%.2f"|format(g.monto) }}</td><td>{{ g.descripcion }}</td>
+            <td><form method="post" action="{{ url_for('delete_card_expense', item_id=g.id) }}"><button class="danger">Eliminar</button></form></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="calendario" class="section">
+      <h2>Calendario</h2>
+      <div class="grid two">
+        <article id="nuevo-evento" class="panel app-view">
+          <form method="post" action="{{ url_for('add_event') }}" class="form-grid">
+            <input type="text" name="nombre" placeholder="Nombre del evento" required>
+            <input type="number" step="0.01" name="monto" placeholder="Monto esperado">
+            <input type="date" name="fecha" value="{{ today }}">
+            <select name="tipo"><option>gasto futuro</option><option>recordatorio</option></select>
+            <button>Agregar evento</button>
+          </form>
+        </article>
+        <article id="vista-calendario" class="panel app-view">
+          <div class="calendar-controls">
+            <button type="button" id="prevMonth">‹</button>
+            <strong id="calendarTitle"></strong>
+            <button type="button" id="nextMonth">›</button>
+          </div>
+          <div id="calendar" class="calendar"></div>
+        </article>
+      </div>
+      <div id="lista-eventos" class="table-wrap app-view">
+        <table>
+          <thead><tr><th>Fecha</th><th>Nombre</th><th>Monto</th><th>Tipo</th><th></th></tr></thead>
+          <tbody>
+          {% for e in eventos %}
+            <tr><td>{{ e.fecha }}</td><td>{{ e.nombre }}</td><td>{{ "$%.2f"|format(e.monto) }}</td><td>{{ e.tipo }}</td>
+            <td><form method="post" action="{{ url_for('delete_event', item_id=e.id) }}"><button class="danger">Eliminar</button></form></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="ajustes" class="section">
+      <h2>Ajustes</h2>
+      <div class="grid two">
+        <article id="categorias-ajustes" class="panel app-view">
+          <h3>Categorias y subcategorias</h3>
+          <form method="post" action="{{ url_for('add_category') }}" class="form-grid">
+            <input name="nombre" placeholder="Nombre" required>
+            <select name="tipo"><option value="gasto">Gasto</option><option value="ingreso">Ingreso</option></select>
+            <select name="parent_id">
+              <option value="">Categoria principal</option>
+              {% for c in categorias if not c.parent_id %}<option value="{{ c.id }}">Subcategoria de {{ c.nombre }}</option>{% endfor %}
+            </select>
+            <button>Guardar categoria</button>
+          </form>
+          <div class="category-list">
+            {% for c in categorias %}
+              <form method="post" action="{{ url_for('update_category', item_id=c.id) }}" class="category-row">
+                <input name="nombre" value="{{ c.nombre }}">
+                <span>{{ "Subcategoria" if c.parent_id else "Principal" }}</span>
+                <button>Editar</button>
+              </form>
+            {% endfor %}
+          </div>
+        </article>
+        <article id="seguridad-ajustes" class="panel app-view">
+          <h3>Seguridad y apariencia</h3>
+          <form method="post" action="{{ url_for('change_password') }}" class="inline-form">
+            <input type="password" name="password" placeholder="Nueva contraseña">
+            <button>Cambiar contraseña</button>
+          </form>
+          <form method="post" action="{{ url_for('set_theme') }}" class="inline-form">
+            <select name="theme"><option value="light">Claro</option><option value="dark">Oscuro</option></select>
+            <button>Aplicar tema</button>
+          </form>
+        </article>
+        <article id="respaldo-ajustes" class="panel app-view">
+          <h3>Exportar y respaldar</h3>
+          <div class="actions">
+            <a class="button" href="{{ url_for('export_xlsx') }}">Exportar Excel</a>
+            <a class="button" href="{{ url_for('backup_db') }}">Descargar respaldo .db</a>
+          </div>
+          <form method="post" action="{{ url_for('restore_db') }}" enctype="multipart/form-data" class="inline-form">
+            <input type="file" name="db_file" accept=".db">
+            <button>Restaurar .db</button>
+          </form>
+        </article>
+        <article id="demo-ajustes" class="panel app-view">
+          <h3>Datos demo</h3>
+          <form method="post" action="{{ url_for('reset_demo') }}">
+            <button class="warning">Recargar datos de prueba</button>
+          </form>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    window.APP_DATA = {
+      budgetChart: {{ dashboard.budget_chart|tojson }},
+      categoryChart: {{ dashboard.by_category|tojson }}
+    };
+  </script>
+  <script src="{{ url_for('static', filename='chart.local.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

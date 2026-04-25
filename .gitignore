@@ -1,0 +1,7 @@
+finanzas.db
+finanzas.db.before_restore
+.pythonlibs/
+.tmp/
+__pycache__/
+*.pyc
+*.zip

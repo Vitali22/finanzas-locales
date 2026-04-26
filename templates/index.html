@@ -6,11 +6,12 @@
   <title>Finanzas Locales</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
-<body>
+<body data-inactivity-minutes="{{ inactivity_minutes }}">
   <aside class="sidebar">
     <div>
       <h1>Finanzas Locales</h1>
       <span>Corte actual: {{ dashboard.cycle_start }} a {{ dashboard.cycle_end }}</span>
+      <button type="button" id="privacyToggle" class="privacy-toggle">Ocultar saldos</button>
     </div>
     <nav class="side-nav">
       <details open>
@@ -63,18 +64,18 @@
     <section id="dashboard-section" class="section">
       <div id="dashboard" class="app-view">
         <div class="metrics">
-          <article><span>Disponible</span><strong>{{ "$%.2f"|format(dashboard.available) }}</strong><small>MXN</small></article>
-          <article><span>Gasto del dia</span><strong>{{ "$%.2f"|format(dashboard.gasto_dia) }}</strong><small>Incluye tarjetas</small></article>
-          <article><span>Presupuesto diario</span><strong>{{ "$%.2f"|format(dashboard.daily_budget) }}</strong><small>Ingreso restante / dias</small></article>
-          <article><span>Restante hoy</span><strong>{{ "$%.2f"|format(dashboard.remaining_today) }}</strong><small>Despues de gastos</small></article>
-          <article><span>Deuda credito</span><strong>{{ "$%.2f"|format(dashboard.credit_debt) }}</strong><small>No resta disponible</small></article>
+          <article><span>Disponible</span><strong class="money">{{ "$%.2f"|format(dashboard.available) }}</strong><small>MXN</small></article>
+          <article><span>Gasto del dia</span><strong class="money">{{ "$%.2f"|format(dashboard.gasto_dia) }}</strong><small>Incluye tarjetas</small></article>
+          <article><span>Presupuesto diario</span><strong class="money">{{ "$%.2f"|format(dashboard.daily_budget) }}</strong><small>Ingreso restante / dias</small></article>
+          <article><span>Restante hoy</span><strong class="money">{{ "$%.2f"|format(dashboard.remaining_today) }}</strong><small>Despues de gastos</small></article>
+          <article><span>Deuda credito</span><strong class="money">{{ "$%.2f"|format(dashboard.credit_debt) }}</strong><small>No resta disponible</small></article>
         </div>
 
         {% if dashboard.alerts %}
         <div class="notice">
           <strong>Proximos 3 dias:</strong>
           {% for event in dashboard.alerts %}
-            <span>{{ event.fecha }} - {{ event.nombre }} {{ "$%.2f"|format(event.monto) }}</span>
+            <span>{{ event.fecha }} - {{ event.nombre }} <span class="money">{{ "$%.2f"|format(event.monto) }}</span></span>
           {% endfor %}
         </div>
         {% endif %}
@@ -98,7 +99,7 @@
           <input type="number" step="0.01" name="ingreso_plan" value="{{ "%.2f"|format(dashboard.monthly_plan) }}">
           <button>Guardar</button>
         </form>
-        <p class="muted">Gastado en el ciclo: {{ "$%.2f"|format(dashboard.cycle_spent) }} MXN</p>
+        <p class="muted">Gastado en el ciclo: <span class="money">{{ "$%.2f"|format(dashboard.cycle_spent) }}</span> MXN</p>
       </article>
     </section>
 
@@ -130,9 +131,10 @@
         </article>
         <article id="filtros-gastos" class="panel app-view">
           <h3>Filtros</h3>
-          <form method="get" class="form-grid">
+          <form method="get" action="{{ url_for('index') }}#lista-gastos" class="form-grid">
             <input type="date" name="fecha_inicio" value="{{ filters.fecha_inicio }}">
             <input type="date" name="fecha_fin" value="{{ filters.fecha_fin }}">
+            <input type="search" name="q" value="{{ filters.q }}" placeholder="Buscar por monto, fecha, categoria o descripcion">
             <select name="categoria">
               <option value="">Todas las categorias</option>
               {% for c in categorias if not c.parent_id %}
@@ -146,7 +148,7 @@
               {% endfor %}
             </select>
             <button>Aplicar filtros</button>
-            <a class="button ghost" href="{{ url_for('index') }}">Limpiar</a>
+            <a class="button ghost" href="{{ url_for('index') }}#lista-gastos">Limpiar</a>
           </form>
         </article>
       </div>
@@ -156,7 +158,7 @@
           <tbody>
           {% for g in gastos %}
             <tr>
-              <td>{{ g.fecha }}</td><td>{{ "$%.2f"|format(g.monto) }}</td><td>{{ g.categoria }}</td><td>{{ g.metodo_pago }}</td><td>{{ g.descripcion }}</td>
+              <td>{{ g.fecha }}</td><td class="money">{{ "$%.2f"|format(g.monto) }}</td><td>{{ g.categoria }}</td><td>{{ g.metodo_pago }}</td><td>{{ g.descripcion }}</td>
               <td><form method="post" action="{{ url_for('delete_expense', item_id=g.id) }}"><button class="danger">Eliminar</button></form></td>
             </tr>
           {% endfor %}
@@ -187,7 +189,7 @@
           <thead><tr><th>Fecha</th><th>Monto</th><th>Categoria</th><th>Descripcion</th><th></th></tr></thead>
           <tbody>
           {% for i in ingresos %}
-            <tr><td>{{ i.fecha }}</td><td>{{ "$%.2f"|format(i.monto) }}</td><td>{{ i.categoria }}</td><td>{{ i.descripcion }}</td>
+            <tr><td>{{ i.fecha }}</td><td class="money">{{ "$%.2f"|format(i.monto) }}</td><td>{{ i.categoria }}</td><td>{{ i.descripcion }}</td>
             <td><form method="post" action="{{ url_for('delete_income', item_id=i.id) }}"><button class="danger">Eliminar</button></form></td></tr>
           {% endfor %}
           </tbody>
@@ -228,9 +230,9 @@
           <article class="card-item">
             <strong>{{ t.nombre }}</strong><span>{{ t.tipo }}</span>
             <p>
-              Limite: {{ "$%.2f"|format(t.limite) }} |
-              Saldo: {{ "$%.2f"|format(t.saldo) }} |
-              Adeudo: {{ "$%.2f"|format(t.total_adeudado) }} |
+              Limite: <span class="money">{{ "$%.2f"|format(t.limite) }}</span> |
+              Saldo: <span class="money">{{ "$%.2f"|format(t.saldo) }}</span> |
+              Adeudo: <span class="money">{{ "$%.2f"|format(t.total_adeudado) }}</span> |
               Corte: {{ t.fecha_corte or "-" }} |
               Pago: {{ t.fecha_pago or "-" }}
             </p>
@@ -243,7 +245,7 @@
           <thead><tr><th>Fecha</th><th>Tarjeta</th><th>Tipo</th><th>Monto</th><th>Descripcion</th><th></th></tr></thead>
           <tbody>
           {% for g in gastos_tarjeta %}
-            <tr><td>{{ g.fecha }}</td><td>{{ g.tarjeta }}</td><td>{{ g.tipo }}</td><td>{{ "$%.2f"|format(g.monto) }}</td><td>{{ g.descripcion }}</td>
+            <tr><td>{{ g.fecha }}</td><td>{{ g.tarjeta }}</td><td>{{ g.tipo }}</td><td class="money">{{ "$%.2f"|format(g.monto) }}</td><td>{{ g.descripcion }}</td>
             <td><form method="post" action="{{ url_for('delete_card_expense', item_id=g.id) }}"><button class="danger">Eliminar</button></form></td></tr>
           {% endfor %}
           </tbody>
@@ -277,7 +279,7 @@
           <thead><tr><th>Fecha</th><th>Nombre</th><th>Monto</th><th>Tipo</th><th></th></tr></thead>
           <tbody>
           {% for e in eventos %}
-            <tr><td>{{ e.fecha }}</td><td>{{ e.nombre }}</td><td>{{ "$%.2f"|format(e.monto) }}</td><td>{{ e.tipo }}</td>
+            <tr><td>{{ e.fecha }}</td><td>{{ e.nombre }}</td><td class="money">{{ "$%.2f"|format(e.monto) }}</td><td>{{ e.tipo }}</td>
             <td><form method="post" action="{{ url_for('delete_event', item_id=e.id) }}"><button class="danger">Eliminar</button></form></td></tr>
           {% endfor %}
           </tbody>
@@ -312,9 +314,10 @@
         <article id="seguridad-ajustes" class="panel app-view">
           <h3>Seguridad y apariencia</h3>
           <form method="post" action="{{ url_for('change_password') }}" class="inline-form">
-            <input type="password" name="password" placeholder="Nueva contraseña">
+            <input type="password" name="password" minlength="6" placeholder="Nueva contraseña">
             <button>Cambiar contraseña</button>
           </form>
+          <p class="muted">La sesion se cierra automaticamente tras {{ inactivity_minutes }} minutos sin actividad.</p>
           <form method="post" action="{{ url_for('set_theme') }}" class="inline-form">
             <select name="theme"><option value="light">Claro</option><option value="dark">Oscuro</option></select>
             <button>Aplicar tema</button>
@@ -326,6 +329,11 @@
             <a class="button" href="{{ url_for('export_xlsx') }}">Exportar Excel</a>
             <a class="button" href="{{ url_for('backup_db') }}">Descargar respaldo .db</a>
           </div>
+          <form method="post" action="{{ url_for('backup_now') }}" class="inline-form">
+            <span class="muted">Ultimo respaldo: {{ backup_info.latest }}</span>
+            <button>Crear respaldo ahora</button>
+          </form>
+          <p class="muted">Respaldos locales: {{ backup_info.count }} | Diario: {{ backup_info.daily }} | Semanal: {{ backup_info.weekly }}</p>
           <form method="post" action="{{ url_for('restore_db') }}" enctype="multipart/form-data" class="inline-form">
             <input type="file" name="db_file" accept=".db">
             <button>Restaurar .db</button>

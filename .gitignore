@@ -1,5 +1,7 @@
 finanzas.db
 finanzas.db.before_restore
+backups/
+.venv/
 .pythonlibs/
 .tmp/
 __pycache__/

@@ -2,7 +2,19 @@
 
 Aplicacion web local para finanzas personales. Corre con Flask, guarda datos en SQLite y se puede abrir desde otros dispositivos de la misma red.
 
+Version actual: `1.1.0`
+
 ## Ejecutar
+
+La forma mas comoda en Windows es abrir:
+
+```text
+iniciar_app.bat
+```
+
+Ese archivo crea un entorno local `.venv`, instala dependencias, abre el navegador y arranca la app.
+
+Manual:
 
 1. Instala dependencias:
 
@@ -77,6 +89,11 @@ Puedes cambiarla en `Ajustes`.
 - Calendario mensual con eventos futuros, recordatorios y gastos reales.
 - Alertas visuales para eventos de los proximos 3 dias.
 - Tema claro/oscuro.
+- Modo privacidad para ocultar saldos en pantalla.
+- Cierre de sesion por inactividad.
+- Cambio obligatorio de la contraseña inicial.
+- Busqueda rapida de gastos por monto, fecha, categoria, metodo o descripcion.
+- Respaldos automaticos diarios y semanales en la carpeta `backups/`.
 - Exportacion Excel con pestanas.
 - Descarga y restauracion de respaldo `.db`.
 
@@ -90,3 +107,22 @@ finanzas.db
 ```
 
 `finanzas.db` se crea automaticamente al iniciar la app.
+
+## Control de versiones
+
+Este proyecto usa Git y GitHub para guardar el historial de cambios.
+
+Archivos de version:
+
+```text
+VERSION
+CHANGELOG.md
+```
+
+Flujo recomendado para guardar cambios:
+
+```powershell
+git add .
+git commit -m "Describe el cambio"
+git push
+```

@@ -29,14 +29,17 @@ except ImportError:  # The app still runs; Excel export shows a clear message.
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "finanzas.db")
+BACKUP_DIR = os.path.join(BASE_DIR, "backups")
 CATEGORIES = ["Transporte", "Comida", "Servicios", "Otros"]
 INCOME_CATEGORIES = ["Sueldo", "Venta", "Transferencia", "Regalo"]
 PAYMENT_METHODS = ["Efectivo", "Débito", "Transferencia", "Crédito"]
 DEFAULT_PASSWORD = "admin123"
 CURRENCY = "MXN"
+INACTIVITY_MINUTES = 15
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FINANZAS_SECRET", "cambia-esta-clave-local")
+app.permanent_session_lifetime = timedelta(minutes=INACTIVITY_MINUTES)
 
 
 def today_iso():
@@ -89,6 +92,29 @@ def login_required(view):
         return view(*args, **kwargs)
 
     return wrapped
+
+
+@app.before_request
+def enforce_session_rules():
+    if request.endpoint == "static":
+        return None
+    if session.get("logged_in"):
+        now = datetime.now()
+        last_seen = session.get("last_seen")
+        if last_seen:
+            last_seen_dt = datetime.fromisoformat(last_seen)
+            if now - last_seen_dt > timedelta(minutes=INACTIVITY_MINUTES):
+                session.clear()
+                flash("Sesion cerrada por inactividad.", "warning")
+                return redirect(url_for("login"))
+        session["last_seen"] = now.isoformat()
+        session.permanent = True
+        if setting("password_must_change", "0") == "1" and request.endpoint not in {
+            "change_initial_password",
+            "logout",
+        }:
+            return redirect(url_for("change_initial_password"))
+    return None
 
 
 def current_cycle(reference=None):
@@ -205,11 +231,60 @@ def init_db():
     if not setting("password_hash"):
         set_setting("password_hash", hash_password(DEFAULT_PASSWORD))
         set_setting("theme", "light")
+        set_setting("password_must_change", "1")
+    else:
+        if setting("theme") is None:
+            set_setting("theme", "light")
+        if setting("password_must_change") is None:
+            must_change = "1" if setting("password_hash") == hash_password(DEFAULT_PASSWORD) else "0"
+            set_setting("password_must_change", must_change)
 
     if not query("SELECT id FROM categorias LIMIT 1"):
         seed_categories()
     if not query("SELECT id FROM ingresos LIMIT 1"):
         seed_demo_data()
+    auto_backup_if_needed()
+
+
+def backup_database(kind):
+    if not os.path.exists(DB_PATH):
+        return None
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(BACKUP_DIR, f"finanzas_{kind}_{timestamp}.db")
+    shutil.copy2(DB_PATH, path)
+    return path
+
+
+def auto_backup_if_needed():
+    if not os.path.exists(DB_PATH):
+        return
+    today = date.today()
+    if setting("last_daily_backup") != today.isoformat():
+        backup_database("diario")
+        set_setting("last_daily_backup", today.isoformat())
+    week_key = f"{today.isocalendar().year}-W{today.isocalendar().week:02d}"
+    if setting("last_weekly_backup") != week_key:
+        backup_database("semanal")
+        set_setting("last_weekly_backup", week_key)
+
+
+def backup_info():
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    files = [
+        os.path.join(BACKUP_DIR, name)
+        for name in os.listdir(BACKUP_DIR)
+        if name.endswith(".db")
+    ]
+    files.sort(key=os.path.getmtime, reverse=True)
+    latest = files[0] if files else None
+    return {
+        "count": len(files),
+        "latest": os.path.basename(latest) if latest else "Sin respaldos aun",
+        "folder": BACKUP_DIR,
+        "daily": setting("last_daily_backup", "Pendiente"),
+        "weekly": setting("last_weekly_backup", "Pendiente"),
+    }
 
 
 def seed_categories():
@@ -436,9 +511,32 @@ def login():
     if request.method == "POST":
         if hash_password(request.form.get("password", "")) == setting("password_hash"):
             session["logged_in"] = True
+            session["last_seen"] = datetime.now().isoformat()
+            session.permanent = True
             return redirect(url_for("index"))
         flash("Contraseña incorrecta.", "danger")
     return render_template("login.html")
+
+
+@app.route("/change-initial-password", methods=["GET", "POST"])
+@login_required
+def change_initial_password():
+    init_db()
+    if request.method == "POST":
+        new_password = request.form.get("password", "").strip()
+        confirm = request.form.get("confirm_password", "").strip()
+        if len(new_password) < 6:
+            flash("Usa una contraseña de al menos 6 caracteres.", "warning")
+        elif new_password != confirm:
+            flash("Las contraseñas no coinciden.", "warning")
+        elif new_password == DEFAULT_PASSWORD:
+            flash("Elige una contraseña diferente a la inicial.", "warning")
+        else:
+            set_setting("password_hash", hash_password(new_password))
+            set_setting("password_must_change", "0")
+            flash("Contraseña actualizada. Ya puedes usar la app.", "success")
+            return redirect(url_for("index"))
+    return render_template("change_password.html")
 
 
 @app.route("/logout")
@@ -456,6 +554,7 @@ def index():
         "fecha_fin": request.args.get("fecha_fin", ""),
         "categoria": request.args.get("categoria", ""),
         "tarjeta": request.args.get("tarjeta", ""),
+        "q": request.args.get("q", "").strip(),
     }
     gastos_sql = "SELECT * FROM gastos WHERE 1=1"
     args = []
@@ -468,6 +567,18 @@ def index():
     if filters["categoria"]:
         gastos_sql += " AND categoria = ?"
         args.append(filters["categoria"])
+    if filters["q"]:
+        gastos_sql += """
+            AND (
+                descripcion LIKE ?
+                OR categoria LIKE ?
+                OR metodo_pago LIKE ?
+                OR fecha LIKE ?
+                OR CAST(monto AS TEXT) LIKE ?
+            )
+        """
+        like = f"%{filters['q']}%"
+        args.extend([like, like, like, like, like])
     gastos_sql += " ORDER BY fecha DESC, id DESC"
 
     card_sql = """
@@ -501,6 +612,8 @@ def index():
         "today": today_iso(),
         "filters": filters,
         "theme": setting("theme", "light"),
+        "backup_info": backup_info(),
+        "inactivity_minutes": INACTIVITY_MINUTES,
     }
     return render_template("index.html", **context)
 
@@ -509,10 +622,13 @@ def index():
 @login_required
 def change_password():
     new_password = request.form.get("password", "").strip()
-    if len(new_password) < 4:
-        flash("La contraseña debe tener al menos 4 caracteres.", "warning")
+    if len(new_password) < 6:
+        flash("La contraseña debe tener al menos 6 caracteres.", "warning")
+    elif new_password == DEFAULT_PASSWORD:
+        flash("Elige una contraseña diferente a la contraseña inicial.", "warning")
     else:
         set_setting("password_hash", hash_password(new_password))
+        set_setting("password_must_change", "0")
         flash("Contraseña actualizada.", "success")
     return redirect(url_for("index"))
 
@@ -811,6 +927,15 @@ def export_xlsx():
 def backup_db():
     init_db()
     return send_file(DB_PATH, as_attachment=True, download_name=f"finanzas_backup_{today_iso()}.db")
+
+
+@app.route("/backup-now", methods=["POST"])
+@login_required
+def backup_now():
+    init_db()
+    path = backup_database("manual")
+    flash(f"Respaldo creado: {os.path.basename(path)}", "success")
+    return redirect(url_for("index") + "#respaldo-ajustes")
 
 
 @app.route("/restore", methods=["POST"])

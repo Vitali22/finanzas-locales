@@ -118,8 +118,45 @@ function setupSubviewNavigation() {
   showView(initial, false);
 }
 
+function setupPrivacyMode() {
+  const button = document.getElementById("privacyToggle");
+  if (!button) return;
+
+  function apply(enabled) {
+    document.body.classList.toggle("privacy-mode", enabled);
+    button.textContent = enabled ? "Mostrar saldos" : "Ocultar saldos";
+    localStorage.setItem("privacyMode", enabled ? "1" : "0");
+  }
+
+  apply(localStorage.getItem("privacyMode") === "1");
+  button.addEventListener("click", () => {
+    apply(!document.body.classList.contains("privacy-mode"));
+  });
+}
+
+function setupInactivityHint() {
+  const minutes = Number(document.body.dataset.inactivityMinutes || 0);
+  if (!minutes) return;
+  const timeoutMs = minutes * 60 * 1000;
+  let timer;
+
+  function resetTimer() {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      window.location.href = "/logout";
+    }, timeoutMs + 1000);
+  }
+
+  ["click", "keydown", "mousemove", "touchstart", "scroll"].forEach((eventName) => {
+    window.addEventListener(eventName, resetTimer, { passive: true });
+  });
+  resetTimer();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   drawCharts();
   renderCalendar();
   setupSubviewNavigation();
+  setupPrivacyMode();
+  setupInactivityHint();
 });
